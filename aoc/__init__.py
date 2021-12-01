@@ -9,6 +9,7 @@ from typing import Dict, TextIO, Type
 class Challenge(ABC):
     name: str
     day: int
+    parts: int = 2
 
     def __init_subclass__(cls, **kwargs):
         if not isabstract(cls):
@@ -24,7 +25,7 @@ class Challenge(ABC):
             DAYS[cls.day] = cls
 
     @abstractmethod
-    def run(self, input_path: Path, output: TextIO):
+    def run(self, input_path: Path, output: TextIO, part: int = 0):
         raise NotImplementedError()
 
 

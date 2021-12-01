@@ -7,7 +7,7 @@ from . import Challenge
 class SonarSweep(Challenge):
     day = 1
 
-    def run(self, input_path: Path, output: TextIO):
+    def run(self, input_path: Path, output: TextIO, part: int = 0):
         prev_depth: Optional[int] = None
         larger_times = 0
         with open(input_path, "rb") as f:

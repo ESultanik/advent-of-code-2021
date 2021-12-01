@@ -12,6 +12,7 @@ def main() -> int:
     challenge_group = parser.add_mutually_exclusive_group(required=True)
     challenge_group.add_argument("--challenge", "-c", choices=sorted(CHALLENGES.keys()))
     challenge_group.add_argument("--day", "-d", choices=sorted(DAYS.keys()), help="the day number")
+    parser.add_argument("--part", "-p", type=int, default=0, help="the part of the challenge to run (default=0)")
     parser.add_argument("--output", "-o", type=str, help="path to the output file, or '-' for STDOUT (the default)",
                         default="-")
 
@@ -22,6 +23,9 @@ def main() -> int:
     else:
         challenge_type = DAYS[args.day]
 
+    if 0 > args.part >= challenge_type.parts:
+        raise ValueError(f"--part must be in the range [0,{challenge_type.parts})")
+
     challenge = challenge_type()
 
     if args.output == "-":
@@ -30,7 +34,7 @@ def main() -> int:
         output = open(args.output, "w")
 
     try:
-        retval = challenge.run(args.INPUT, output)
+        retval = challenge.run(args.INPUT, output, part=args.part)
         if retval is None:
             return 0
         else:
