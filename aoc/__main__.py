@@ -26,15 +26,15 @@ def main() -> int:
     if 0 > args.part >= challenge_type.parts:
         raise ValueError(f"--part must be in the range [0,{challenge_type.parts})")
 
-    challenge = challenge_type()
-
     if args.output == "-":
         output = sys.stdout
     else:
         output = open(args.output, "w")
 
+    challenge = challenge_type(args.INPUT, output)
+
     try:
-        retval = challenge.run(args.INPUT, output, part=args.part)
+        retval = challenge[args.part]()
         if retval is None:
             return 0
         else:

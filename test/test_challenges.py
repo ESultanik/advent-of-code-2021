@@ -11,8 +11,9 @@ OUTPUTS_DIR = ROOT_DIR / "outputs"
 
 class TestChallenges(TestCase):
     def test_all_challenges(self):
-        for challenge in DAYS.values():
-            for part in range(challenge.parts):
+        for challenge_type in DAYS.values():
+            challenge = challenge_type
+            for part in challenge_type:
                 default_input = INPUTS_DIR / f"day{challenge.day}part{part}.txt"
                 if not default_input.exists():
                     sys.stderr.write(f"Warning: No default input for challenge {challenge.name} part {part}; "
@@ -20,7 +21,5 @@ class TestChallenges(TestCase):
                     continue
                 output_path = OUTPUTS_DIR / f"day{challenge.day}part{part}.txt"
                 with open(output_path, "w") as f:
-                    retval = challenge().run(default_input, f, part=part)
-                    if retval is None:
-                        retval = 0
+                    retval = challenge(default_input, f).run_part(part)
                 self.assertEqual(retval, 0)

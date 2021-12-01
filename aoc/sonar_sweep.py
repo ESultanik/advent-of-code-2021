@@ -1,5 +1,4 @@
-from pathlib import Path
-from typing import List, TextIO
+from typing import List, Optional
 
 from . import Challenge
 
@@ -7,11 +6,11 @@ from . import Challenge
 class SonarSweep(Challenge):
     day = 1
 
-    @staticmethod
-    def run_part0(input_path: Path, output: TextIO):
+    @Challenge.register_part(0)
+    def larger_times(self):
         prev_depth: Optional[int] = None
         larger_times = 0
-        with open(input_path, "rb") as f:
+        with open(self.input_path, "rb") as f:
             for line in f:
                 depth = int(line.decode("utf-8"))
                 if prev_depth is None:
@@ -20,13 +19,13 @@ class SonarSweep(Challenge):
                     if depth > prev_depth:
                         larger_times += 1
                     prev_depth = depth
-        output.write(f"{larger_times}\n")
+        self.output.write(f"{larger_times}\n")
 
-    @staticmethod
-    def run_part1(input_path: Path, output: TextIO):
+    @Challenge.register_part(1)
+    def larger_windows(self):
         window: List[int] = []
         larger_times = 0
-        with open(input_path, "rb") as f:
+        with open(self.input_path, "rb") as f:
             for line in f:
                 depth = int(line.decode("utf-8"))
                 last_window = window
@@ -34,7 +33,4 @@ class SonarSweep(Challenge):
                 if len(last_window) >= 3:
                     if sum(window) > sum(last_window):
                         larger_times += 1
-        output.write(f"{larger_times}\n")
-
-    def run(self, input_path: Path, output: TextIO, part: int = 0):
-        getattr(SonarSweep, f"run_part{part}")(input_path, output)
+        self.output.write(f"{larger_times}\n")
