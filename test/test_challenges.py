@@ -20,7 +20,7 @@ class TestChallenges(TestCase):
                     continue
                 output_path = OUTPUTS_DIR / f"day{challenge.day}part{part}.txt"
                 with open(output_path, "w") as f:
-                    retval = challenge().run(default_input, f)
+                    retval = challenge().run(default_input, f, part=part)
                     if retval is None:
                         retval = 0
                 self.assertEqual(retval, 0)
