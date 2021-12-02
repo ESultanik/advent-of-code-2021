@@ -8,21 +8,26 @@ from typing import Callable, Dict, Iterator, Optional, TextIO, Type
 
 
 class ChallengeMeta(ABCMeta):
-    parts: Dict[int, Callable[["Challenge"], Optional[int]]] = {}
+    def __len__(cls):
+        if not hasattr(cls, "parts"):
+            return 0
+        return cls.parts
 
-    def __len__(self):
-        return self.parts
+    def __getitem__(cls, part: int) -> Callable[["Challenge"], Optional[int]]:
+        if not hasattr(cls, "parts"):
+            raise ValueError(part)
+        return cls.parts[part]
 
-    def __getitem__(self, part: int) -> Callable[["Challenge"], Optional[int]]:
-        return self.parts[part]
-
-    def __iter__(self) -> Iterator[int]:
-        yield from sorted(self.parts.keys())
+    def __iter__(cls) -> Iterator[int]:
+        if not hasattr(cls, "parts"):
+            return
+        yield from sorted(cls.parts.keys())
 
 
 class Challenge(metaclass=ChallengeMeta):
     name: str
     day: int
+    parts: Dict[int, Callable[["Challenge"], Optional[int]]]
 
     @staticmethod
     def register_part(part: Optional[int] = 0, challenge: Optional[Type["Challenge"]] = None):
@@ -31,6 +36,8 @@ class Challenge(metaclass=ChallengeMeta):
                 # we are registering a member function of a challenge
                 setattr(func, "_challenge_part", part)
             else:
+                if not hasattr(challenge, "parts"):
+                    setattr(challenge, "parts", {})
                 if part in challenge.parts:
                     raise TypeError(f"Challenge {challenge.name} for day {challenge.day} already has part {part} "
                                     f"registered as function {challenge.parts[part]}")
@@ -46,6 +53,8 @@ class Challenge(metaclass=ChallengeMeta):
         if not isabstract(cls):
             if not hasattr(cls, "name") or cls.name is None:
                 setattr(cls, "name", cls.__name__)
+            if not hasattr(cls, "parts"):
+                setattr(cls, "parts", {})
             if cls.name in CHALLENGES:
                 raise TypeError(f"A challenge named {cls.name} already exists!")
             elif not hasattr(cls, "day") or cls.day is None:
