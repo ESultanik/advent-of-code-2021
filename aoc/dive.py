@@ -38,6 +38,25 @@ class Position:
         return Position(depth=max(self.depth - distance, 0), position=self.position)
 
 
+class AimingPosition(Position):
+    def __init__(self, depth: int = 0, position: int = 0, aim: int = 0):
+        super().__init__(depth=depth, position=position)
+        self.aim: int = aim
+
+    def forward(self, distance: int) -> "Position":
+        return AimingPosition(
+            depth=max(self.depth + self.aim * distance, 0),
+            position=self.position + distance,
+            aim=self.aim
+        )
+
+    def down(self, distance: int) -> "AimingPosition":
+        return AimingPosition(depth=self.depth, position=self.position, aim=self.aim + distance)
+
+    def up(self, distance: int) -> "AimingPosition":
+        return AimingPosition(depth=self.depth, position=self.position, aim=self.aim - distance)
+
+
 class Dive(Challenge):
     day = 2
 
@@ -50,6 +69,13 @@ class Dive(Challenge):
     @Challenge.register_part(0)
     def final_position(self):
         position = Position()
+        for command, distance in self.read_input():
+            position = position.apply(command, distance)
+        self.output.write(f"{position.depth * position.position}\n")
+
+    @Challenge.register_part(1)
+    def aiming_final_position(self):
+        position = AimingPosition()
         for command, distance in self.read_input():
             position = position.apply(command, distance)
         self.output.write(f"{position.depth * position.position}\n")
