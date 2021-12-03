@@ -71,4 +71,3 @@ class BinaryDiagnostic(Challenge):
         oxygen = bits_to_int(oxygen_numbers[0])
         co2 = bits_to_int(co2_numbers[0])
         self.output.write(f"{oxygen * co2}\n")
-
