@@ -44,8 +44,7 @@ class GiantSquid(Challenge):
                         rows = []
         return numbers, tuple(boards)
 
-    @Challenge.register_part(0)
-    def bingo(self):
+    def scores(self) -> Iterator[Tuple[int, int]]:
         numbers, boards = self.parse_boards()
 
         history: Set[int] = set()
@@ -53,9 +52,25 @@ class GiantSquid(Challenge):
         for number in numbers:
             history.add(number)
 
+            losers: List[Board] = []
+
             for board in boards:
                 if board.is_winner(history):
                     unused = set(board) - history
                     score = sum(unused)
-                    self.output.write(f"{score * number}\n")
-                    return
+                    yield score, number
+                else:
+                    losers.append(board)
+
+            boards = losers
+
+    @Challenge.register_part(0)
+    def bingo(self):
+        score, number = next(iter(self.scores()))
+        self.output.write(f"{score * number}\n")
+
+    @Challenge.register_part(1)
+    def last_to_win(self):
+        for score, number in self.scores():
+            pass
+        self.output.write(f"{score * number}\n")
