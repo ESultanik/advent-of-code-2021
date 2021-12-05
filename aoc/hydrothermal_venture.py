@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from collections import Counter, defaultdict
 import re
-from typing import Dict, Iterator, List, Set, Tuple
+from typing import Dict, Iterator, Tuple
 
 from . import Challenge
 
