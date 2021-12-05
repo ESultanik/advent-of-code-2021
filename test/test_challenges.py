@@ -1,5 +1,6 @@
 from pathlib import Path
 import sys
+from time import process_time
 from unittest import TestCase
 
 from aoc import DAYS
@@ -24,5 +25,9 @@ class TestChallenges(TestCase):
                         continue
                 output_path = OUTPUTS_DIR / f"day{challenge.day}part{part}.txt"
                 with open(output_path, "w") as f:
+                    start_time = process_time()
                     retval = challenge(default_input, f).run_part(part)
+                    end_time = process_time()
+                    sys.stderr.write(f"Challgenge {challenge.day} part {part} completed in {end_time - start_time} "
+                                     "seconds\n")
                 self.assertEqual(retval, 0)
