@@ -72,6 +72,35 @@ class VerticalLine(Line):
         return self.x, self.to_y
 
 
+class DiagonalLine(Line):
+    def __init__(self, x1: int, y1: int, x2: int, y2: int):
+        if x1 > x2:
+            # make sure x is always non-decreasing
+            x1, x2, y1, y2 = x2, x1, y2, y1
+        self._x1: int = x1
+        self._y1: int = y1
+        self._x2: int = x2
+        self._y2: int = y2
+        if x1 == x2:
+            raise ValueError(f"Line {self!s} is vertical, not diagonal!")
+        elif y1 == y2:
+            raise ValueError(f"Line {self!s} is horizontal, not diagonal!")
+        elif self._x2 - self._x1 != abs(self._y2 - self._y1):
+            raise ValueError(f"Line {self!s} is not at 45°!")
+
+    def points(self) -> Iterator[Tuple[int, int]]:
+        if self._y1 <= self._y2:
+            y_delta = 1
+        else:
+            y_delta = -1
+        for i in range(self._x2 - self._x1 + 1):
+            yield self._x1 + i, self._y1 + i * y_delta
+
+    @property
+    def p2(self) -> Tuple[int, int]:
+        return self._x2, self._y2
+
+
 class Diagram:
     def __init__(self):
         self._cells: Dict[int, Dict[int, int]] = defaultdict(Counter)
@@ -104,11 +133,21 @@ class HydrothermalVenture(Challenge):
                     elif x1 == x2:
                         yield VerticalLine(x=x1, from_y=y1, to_y=y2)
                     else:
-                        pass
-                        # raise ValueError(f"Invalid line {i + 1} of {self.input_path.name}: {line!r}")
+                        yield DiagonalLine(x1=x1, y1=y1, x2=x2, y2=y2)
 
     @Challenge.register_part(0)
     def overlap(self):
+        diagram = Diagram()
+        for line in self.read_lines():
+            if not (isinstance(line, HorizontalLine) or isinstance(line, VerticalLine)):
+                continue
+            for x, y in line.points():
+                diagram[y][x] += 1
+        two_overlapping = sum(1 for _, count in diagram if count >= 2)
+        self.output.write(f"{two_overlapping}\n")
+
+    @Challenge.register_part(1)
+    def diagonal(self):
         diagram = Diagram()
         for line in self.read_lines():
             for x, y in line.points():
