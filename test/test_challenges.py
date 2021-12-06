@@ -1,6 +1,8 @@
 from pathlib import Path
+import subprocess
 import sys
 from time import process_time
+from typing import Optional
 from unittest import TestCase
 
 from aoc import DAYS
@@ -24,6 +26,14 @@ class TestChallenges(TestCase):
                                          f"add one at {default_input!s}")
                         continue
                 output_path = OUTPUTS_DIR / f"day{challenge.day}part{part}.txt"
+                expected_output: Optional[bytes] = None
+                # is there an existing output?
+                if output_path.exists():
+                    # is the output checked into `git` and unmodified?
+                    if subprocess.call(["git", "diff", "--exit-code", str(output_path)]) == 0:
+                        # the output is checked in and unmodified, so test our result against that output
+                        with open(output_path, "rb") as f:
+                            expected_output = f.read()
                 with open(output_path, "w") as f:
                     start_time = process_time()
                     retval = challenge(default_input, f).run_part(part)
@@ -31,3 +41,8 @@ class TestChallenges(TestCase):
                     sys.stderr.write(f"Challgenge {challenge.day} part {part} completed in {end_time - start_time} "
                                      "seconds\n")
                 self.assertEqual(retval, 0)
+                if expected_output is not None:
+                    # test the output against what was expected:
+                    with open(output_path, "rb") as f:
+                        new_output = f.read()
+                    self.assertEqual(expected_output, new_output)
