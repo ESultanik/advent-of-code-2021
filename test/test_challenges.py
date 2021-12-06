@@ -12,7 +12,7 @@ OUTPUTS_DIR = ROOT_DIR / "outputs"
 
 class TestChallenges(TestCase):
     def test_all_challenges(self):
-        for challenge_type in DAYS.values():
+        for _, challenge_type in sorted(DAYS.items()):
             challenge = challenge_type
             for part in challenge_type:
                 default_input = INPUTS_DIR / f"day{challenge.day}part{part}.txt"
