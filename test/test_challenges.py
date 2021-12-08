@@ -30,7 +30,13 @@ class TestChallenges(TestCase):
                 # is there an existing output?
                 if output_path.exists():
                     # is the output checked into `git` and unmodified?
-                    if subprocess.call(["git", "diff", "--exit-code", str(output_path)]) == 0:
+                    if subprocess.call(
+                            ["git", "ls-files", "--error-unmatch", output_path.name], cwd=output_path.parent,
+                            stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL
+                    ) == 0 and subprocess.call(
+                        ["git", "diff", "--exit-code", output_path.name], cwd=output_path.parent,
+                        stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL
+                    ) == 0:
                         # the output is checked in and unmodified, so test our result against that output
                         with open(output_path, "rb") as f:
                             expected_output = f.read()
