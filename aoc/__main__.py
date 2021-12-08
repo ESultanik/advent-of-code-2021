@@ -11,7 +11,7 @@ def main() -> int:
     parser.add_argument("INPUT", type=Path, help="path to the input file")
     challenge_group = parser.add_mutually_exclusive_group(required=True)
     challenge_group.add_argument("--challenge", "-c", choices=sorted(CHALLENGES.keys()))
-    challenge_group.add_argument("--day", "-d", choices=sorted(DAYS.keys()), help="the day number")
+    challenge_group.add_argument("--day", "-d", type=int, choices=sorted(DAYS.keys()), help="the day number")
     parser.add_argument("--part", "-p", type=int, default=0, help="the part of the challenge to run (default=0)")
     parser.add_argument("--output", "-o", type=str, help="path to the output file, or '-' for STDOUT (the default)",
                         default="-")
@@ -34,7 +34,7 @@ def main() -> int:
     challenge = challenge_type(args.INPUT, output)
 
     try:
-        retval = challenge[args.part]()
+        retval = challenge.run_part(args.part)
         if retval is None:
             return 0
         else:
