@@ -61,8 +61,8 @@ class HeightMap:
     def low_points(self) -> Iterator[int]:
         for row in range(self.height):
             for col in range(self.width):
-                _, v = self.heights[row][col]
-                if all(n > v for n in self.neighborhood(row, col)):
+                v = self.heights[row][col]
+                if all(n > v for _, n in self.neighborhood(row, col)):
                     yield v
 
     def basins(self) -> Iterator[Basin]:
