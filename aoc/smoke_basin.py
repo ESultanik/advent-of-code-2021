@@ -21,11 +21,14 @@ class HeightMap:
         self.width: int = len(self.heights[0])
 
     def neighborhood(self, row: int, col: int):
-        for nrow in clipped_range(row, max_value=self.height - 1):
-            for ncol in clipped_range(col, max_value=self.width - 1):
-                if nrow == row and ncol == col:
-                    continue
-                yield self.heights[nrow][ncol]
+        if row > 0:
+            yield self.heights[row - 1][col]
+        if col > 0:
+            yield self.heights[row][col - 1]
+        if col < self.width - 1:
+            yield self.heights[row][col + 1]
+        if row < self.height - 1:
+            yield self.heights[row + 1][col]
 
     def low_points(self) -> Iterator[int]:
         for row in range(self.height):
