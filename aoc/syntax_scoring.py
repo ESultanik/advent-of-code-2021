@@ -1,4 +1,4 @@
-from typing import List, Optional, Tuple
+from typing import List, Iterable, Tuple, Union
 
 from . import Challenge
 
@@ -11,7 +11,19 @@ DELIMITERS = (
 )
 
 
-def first_illegal_char(line: str) -> Optional[Tuple[int, str, str]]:
+class Corruption:
+    def __init__(self, offset: int, expected: str, illegal: str):
+        self.offset: int = offset
+        self.expected: str = expected
+        self.illegal: str = illegal
+
+
+class Completion:
+    def __init__(self, completion: Iterable[str]):
+        self.completion: Tuple[str, ...] = tuple(completion)
+
+
+def first_illegal_char(line: str) -> Union[Corruption, Completion]:
     symbol_stack: List[str] = []
     for i, symbol in enumerate(line):
         for opening, closing in DELIMITERS:
@@ -25,10 +37,10 @@ def first_illegal_char(line: str) -> Optional[Tuple[int, str, str]]:
                 else:
                     expected = symbol_stack.pop()
                 if expected != symbol:
-                    return i, expected, symbol
+                    return Corruption(i, expected, symbol)
                 # print(f"{'    ' * len(symbol_stack)}{closing}")
                 break
-    return None
+    return Completion(reversed(symbol_stack))
 
 
 class SyntaxScoring(Challenge):
@@ -36,24 +48,37 @@ class SyntaxScoring(Challenge):
 
     @Challenge.register_part(0)
     def errors(self):
-        assert first_illegal_char("{([(<{}[<>[]}>{[]{[(<()>")[1:] == (']', '}')
-        assert first_illegal_char("[[<[([]))<([[{}[[()]]]")[1:] == (']', ')')
-        assert first_illegal_char("[{[{({}]{}}([{[{{{}}([]")[1:] == (')', ']')
         points = 0
         with open(self.input_path, "r") as f:
             for line in f:
                 result = first_illegal_char(line)
-                if result is None:
+                if not isinstance(result, Corruption):
                     print(f"VALID   {line.strip()}")
                     continue
-                offset, expected, illegal = result
-                print(f"INVALID {line[:offset]}|EXPECTED {expected!r} BUT FOUND {illegal!r}|{line[offset+1:].strip()}")
-                if illegal == ")":
+                print(f"INVALID {line[:result.offset]}|EXPECTED {result.expected!r} BUT FOUND "
+                      f"{result.illegal!r}|{line[result.offset+1:].strip()}")
+                if result.illegal == ")":
                     points += 3
-                elif illegal == "]":
+                elif result.illegal == "]":
                     points += 57
-                elif illegal == "}":
+                elif result.illegal == "}":
                     points += 1197
-                elif illegal == ">":
+                elif result.illegal == ">":
                     points += 25137
         self.output.write(f"{points}\n")
+
+    @Challenge.register_part(1)
+    def completion(self):
+        scores = []
+        with open(self.input_path, "r") as f:
+            for line in f:
+                result = first_illegal_char(line)
+                if not isinstance(result, Completion):
+                    continue
+                score = 0
+                for c in result.completion:
+                    p = (")", "]", "}", ">").index(c) + 1
+                    score = score * 5 + p
+                scores.append(score)
+        scores = sorted(scores)
+        self.output.write(f"{scores[len(scores) // 2]}\n")
