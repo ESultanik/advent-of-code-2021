@@ -7,6 +7,9 @@ class Puzzle:
     def __init__(self, state: List[List[int]]):
         self.state = state
 
+    def all_flashed(self) -> bool:
+        return all(all(col == 0 for col in row) for row in self.state)
+
     def neighborhood(self, row: int, col: int) -> Iterator[int]:
         if 0 < row < len(self.state) - 1:
             row_range = range(row - 1, row + 2)
@@ -72,3 +75,12 @@ class DumboOctopus(Challenge):
             puzzle = puzzle.step()
             flashes += puzzle.flashes()
         self.output.write(f"{flashes}\n")
+
+    @Challenge.register_part(1)
+    def all_flashed(self):
+        puzzle = self.load()
+        first_all_flash_step = 0
+        while not puzzle.all_flashed():
+            first_all_flash_step += 1
+            puzzle = puzzle.step()
+        self.output.write(f"{first_all_flash_step}\n")
