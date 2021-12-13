@@ -1,5 +1,4 @@
 from abc import ABCMeta
-from functools import partial
 from importlib import import_module
 from inspect import isabstract
 from pathlib import Path

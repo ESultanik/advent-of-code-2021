@@ -11,7 +11,7 @@ setup(
     install_requires=[],
     entry_points={
         'console_scripts': [
-            'aoc2021 = aoc.__main__:main'
+            'aoc2021 = aoc2021.__main__:main'
         ]
     }
 )

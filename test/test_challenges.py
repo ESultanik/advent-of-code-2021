@@ -5,7 +5,7 @@ from time import process_time
 from typing import Optional
 from unittest import TestCase
 
-from aoc import DAYS
+from aoc2021 import DAYS
 
 ROOT_DIR = Path(__file__).absolute().parent.parent
 INPUTS_DIR = ROOT_DIR / "inputs"
@@ -13,6 +13,8 @@ OUTPUTS_DIR = ROOT_DIR / "outputs"
 
 
 class TestChallenges(TestCase):
+
+
     def test_all_challenges(self):
         for _, challenge_type in sorted(DAYS.items()):
             challenge = challenge_type
