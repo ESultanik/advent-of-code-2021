@@ -63,8 +63,16 @@ class TransparentPaper:
     def __init__(self, dots: Iterable[Dot]):
         self.dots: FrozenSet[Dot] = frozenset(dots)
 
+    def __contains__(self, dot: Dot):
+        return dot in self.dots
+
     def __str__(self):
-        return "\n".join(map(str, self.dots))
+        max_x = max(d.x for d in self)
+        max_y = max(d.y for d in self)
+        row_strs: List[str] = []
+        for row in range(max_y + 1):
+            row_strs.append("".join(([".", "#"][Dot(col, row) in self] for col in range(max_x + 1))))
+        return "\n".join(row_strs)
 
     def __len__(self):
         return len(self.dots)
@@ -103,3 +111,11 @@ class TransparentOrigami(Challenge):
             paper, folds = TransparentPaper.load(f)
         after_first = paper.apply(folds[0])
         self.output.write(f"{len(after_first)}\n")
+
+    @Challenge.register_part(1)
+    def fold_all(self):
+        with open(self.input_path, "r") as f:
+            paper, folds = TransparentPaper.load(f)
+        for fold in folds:
+            paper = paper.apply(fold)
+        self.output.write(str(paper))
