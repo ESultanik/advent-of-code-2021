@@ -1,5 +1,5 @@
 from collections import Counter
-from typing import Counter as CounterType, Dict, Iterable, Iterator, TextIO, Union
+from typing import Counter as CounterType, Dict, Iterable, List, TextIO, Tuple, Union
 
 from . import Challenge
 
@@ -59,14 +59,24 @@ class Polymer:
 class ExtendedPolymerization(Challenge):
     day = 14
 
-    @Challenge.register_part(0)
-    def commonality(self):
+    def run_steps(self, n: int) -> List[Tuple[str, int]]:
         with open(self.input_path, "r") as f:
             p = Polymer.load(f)
-        for _ in range(10):
+        for _ in range(n):
             p = p.step()
         elements = p.num_elements()
-        commonality = elements.most_common()
+        return elements.most_common()
+
+    @Challenge.register_part(0)
+    def commonality(self):
+        commonality = self.run_steps(10)
+        _, highest_count = commonality[0]
+        _, lowest_count = commonality[-1]
+        self.output.write(f"{highest_count - lowest_count}\n")
+
+    @Challenge.register_part(1)
+    def stronger(self):
+        commonality = self.run_steps(40)
         _, highest_count = commonality[0]
         _, lowest_count = commonality[-1]
         self.output.write(f"{highest_count - lowest_count}\n")
