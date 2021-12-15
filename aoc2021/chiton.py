@@ -92,7 +92,7 @@ class Cavern:
             node = heapq.heappop(queue)
             h = node.heuristic
             if h < best_heuristic:
-                print(f"{(first_heuristic - h)/first_heuristic*100.0 + 0.5:05}%")
+                # print(f"{(first_heuristic - h)/first_heuristic*100.0 + 0.5:05}%")
                 best_heuristic = h
             # print(str(node))
             if node.is_goal:
@@ -106,6 +106,25 @@ class Cavern:
                     best_f_costs[pos] = s.f_cost
                     heapq.heappush(queue, s)
         raise ValueError(f"There is no path from (0, 0) to ({to_row}, {to_col})")
+
+    def expand(self, original_width: int, original_height: int) -> "Cavern":
+        upper_right: List[List[int]] = [
+            [[c+1,1][c >= 9] for c in row[-original_width:]] for row in self.risks
+        ]
+        lower_left: List[List[int]] = [
+            [[c+1,1][c >= 9] for c in row] for row in self.risks[-original_height:]
+        ]
+        lower_right: List[List[int]] = [
+            [[c+1,1][c >= 9] for c in row] for row in upper_right[-original_height:]
+        ]
+        expanded: List[List[int]] = [
+            self.risks[i] + upper_right[i]
+            for i in range(self.height)
+        ] + [
+            lower_left[i] + lower_right[i]
+            for i in range(original_height)
+        ]
+        return Cavern(expanded)
 
     def __str__(self):
         return "\n".join(("".join(map(str, row)) for row in self.risks))
@@ -123,6 +142,15 @@ class Chiton(Challenge):
     @Challenge.register_part(0)
     def lowest_risk(self):
         cavern = self.load()
-        print(str(cavern))
+        # print(str(cavern))
+        node = cavern.shortest_path(to_row=cavern.height - 1, to_col=cavern.width - 1)
+        self.output.write(f"{node.path_cost}\n")
+
+    @Challenge.register_part(1)
+    def larger_cavern(self):
+        cavern = self.load()
+        w, h = cavern.width, cavern.height
+        for _ in range(4):
+            cavern = cavern.expand(w, h)
         node = cavern.shortest_path(to_row=cavern.height - 1, to_col=cavern.width - 1)
         self.output.write(f"{node.path_cost}\n")
