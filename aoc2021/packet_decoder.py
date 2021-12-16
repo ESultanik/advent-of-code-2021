@@ -61,14 +61,15 @@ class Packet(ABC):
         type_id = bits.read(3)
         print(f"Packet type {type_id} version {version}")
         if type_id not in PACKETS_BY_TYPE:
-            # raise NotImplementedError(f"Add support for packets of type {type_id}")
-            # treat it as an operator for now
-            p = Operator.parse_type(bits)
-            setattr(p, "type_id", type_id)
+            raise NotImplementedError(f"Add support for packets of type {type_id}")
         else:
             p = PACKETS_BY_TYPE[type_id].parse_type(bits)
         setattr(p, "version", version)
         return p
+
+    @abstractmethod
+    def value(self) -> int:
+        raise NotImplementedError()
 
     @classmethod
     @abstractmethod
@@ -82,6 +83,9 @@ class Literal(Packet):
     def __init__(self, number: int):
         self.number: int = number
 
+    def value(self) -> int:
+        return self.number
+
     @classmethod
     def parse_type(cls: T, bits: BitStream) -> T:
         number = 0
@@ -94,7 +98,7 @@ class Literal(Packet):
         return Literal(number)
 
 
-class Operator(Packet):
+class Operator(Packet, ABC):
     def __init__(self, subpackets: Iterable[Packet]):
         self.subpackets: Tuple[Packet, ...] = tuple(subpackets)
 
@@ -108,7 +112,7 @@ class Operator(Packet):
         if length_type_id:
             num_subpackets = bits.read(11)
             print(f"\tOperator with {num_subpackets} sub-packets")
-            return Operator((Packet.parse(bits) for _ in range(num_subpackets)))
+            return cls((Packet.parse(bits) for _ in range(num_subpackets)))
         else:
             total_length = bits.read(15)
             print(f"\tOperator with {total_length} bits of sub-packets")
@@ -118,7 +122,59 @@ class Operator(Packet):
             subpackets = []
             while bits.tell() - start_pos < total_length:
                 subpackets.append(Packet.parse(bits))
-            return Operator(subpackets)
+            return cls(subpackets)
+
+
+class Sum(Operator):
+    type_id = 0
+
+    def value(self) -> int:
+        return sum(p.value() for p in self.subpackets)
+
+
+class Product(Operator):
+    type_id = 1
+
+    def value(self) -> int:
+        prod = 1
+        for p in self.subpackets:
+            prod *= p.value()
+        return prod
+
+
+class Minimum(Operator):
+    type_id = 2
+
+    def value(self) -> int:
+        return min(p.value() for p in self.subpackets)
+
+
+class Maximum(Operator):
+    type_id = 3
+
+    def value(self) -> int:
+        return max(p.value() for p in self.subpackets)
+
+
+class GreaterThan(Operator):
+    type_id = 5
+
+    def value(self) -> int:
+        return [0, 1][self.subpackets[0].value() > self.subpackets[1].value()]
+
+
+class LessThan(Operator):
+    type_id = 6
+
+    def value(self) -> int:
+        return [0, 1][self.subpackets[0].value() < self.subpackets[1].value()]
+
+
+class Equals(Operator):
+    type_id = 7
+
+    def value(self) -> int:
+        return [0, 1][self.subpackets[0].value() == self.subpackets[1].value()]
 
 
 class PacketDecoder(Challenge):
@@ -135,3 +191,10 @@ class PacketDecoder(Challenge):
             packet = Packet.parse(bits)
             version_sum += sum(p.version for p in packet)
         self.output.write(f"{version_sum}\n")
+
+    @Challenge.register_part(1)
+    def evaluate(self):
+        with open(self.input_path, "r") as f:
+            bits = BitStream(f.read())
+        value = Packet.parse(bits).value()
+        self.output.write(f"{value}\n")
