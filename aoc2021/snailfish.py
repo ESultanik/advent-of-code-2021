@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from enum import Enum
+import itertools
 import json
 from typing import Iterator, List, Optional, Sequence, Tuple, TypeVar, Union
 
@@ -107,14 +108,14 @@ class Pair(Number):
             raise TypeError(f"Cannot add {other!r} to {self!r}")
 
     def __add__(self, other: "Number") -> "Pair":
-        print(f"{self!s} + {other!s}")
+        # print(f"{self!s} + {other!s}")
         result = Pair(self.clone(), other.clone())
         while True:
             exploded = False
             for number, ancestors in result:
                 assert len(ancestors) < 5
                 if isinstance(number, Pair) and len(ancestors) == 4:
-                    print(f"Explode {number!s}")
+                    # print(f"Explode {number!s}")
                     assert isinstance(number.left, RegularNumber)
                     assert isinstance(number.right, RegularNumber)
                     # the left value is added to the first regular number to the left of the exploding pair (if any)
@@ -128,12 +129,12 @@ class Pair(Number):
                         number.parent.left = RegularNumber(0, parent=number.parent, side=Side.LEFT)
                     else:
                         number.parent.right = RegularNumber(0, parent=number.parent, side=Side.RIGHT)
-                    print(f"After explode: {ancestors[0]!s}")
+                    # print(f"After explode: {ancestors[0]!s}")
                     break
             else:
                 for number, ancestors in result:
                     if isinstance(number, RegularNumber) and number.value >= 10:
-                        print(f"Split {number!s}")
+                        # print(f"Split {number!s}")
                         assert len(ancestors) > 0 and number.side != Side.ROOT
                         left_value = number.value // 2
                         new_pair = Pair(RegularNumber(left_value), RegularNumber(number.value - left_value),
@@ -142,7 +143,7 @@ class Pair(Number):
                             number.parent.left = new_pair
                         else:
                             number.parent.right = new_pair
-                        print(f"After split: {ancestors[0]!s}")
+                        # print(f"After split: {ancestors[0]!s}")
                         break
                 else:
                     # we neither split nor exploded
@@ -181,3 +182,13 @@ class Snailfish(Challenge):
         total = sum(numbers)
         print(total)
         self.output.write(f"{total.magnitude()}")
+
+    @Challenge.register_part(1)
+    def largest(self):
+        numbers = list(self.load())
+        biggest: Optional[int] = None
+        for n1, n2 in itertools.combinations(numbers, 2):
+            total = max((n1 + n2).magnitude(), (n2 + n1).magnitude())
+            if biggest is None or biggest < total:
+                biggest = total
+        self.output.write(f"{biggest}")
