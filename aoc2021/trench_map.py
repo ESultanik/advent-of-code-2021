@@ -67,7 +67,6 @@ class EnhancementAlgorithm:
                     value <<= 1
                     if n:
                         value |= 0b1
-                print(value)
                 if self.mapping[value]:
                     light_pixels.append((x, y))
         if image.outer_pixels_are_dark:
@@ -115,5 +114,14 @@ class TrenchMap(Challenge):
         image = algorithm.enhance(image)
         print()
         print(str(image))
+        assert image.outer_pixels_are_dark
+        self.output.write(f"{len(image.light_pixels)}\n")
+
+    @Challenge.register_part(1)
+    def lots_of_pixels(self):
+        image, algorithm = self.load()
+        for i in range(50):
+            print(f"Enhancement {i + 1}...")
+            image = algorithm.enhance(image)
         assert image.outer_pixels_are_dark
         self.output.write(f"{len(image.light_pixels)}\n")
