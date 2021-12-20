@@ -12,6 +12,9 @@ class Point:
         self.y: int = y
         self.z: int = z
 
+    def distance_to(self, point: "Point") -> int:
+        return abs(self.x - point.x) + abs(self.y - point.y) + abs(self.z - point.z)
+
     def __eq__(self, other):
         return isinstance(other, Point) and self.x == other.x and self.y == other.y and self.z == other.z
 
@@ -299,12 +302,13 @@ class BeaconScanner(Challenge):
         if points:
             yield ScanResults(points)
 
-    @Challenge.register_part(0)
-    def how_many(self):
+    def solve(self) -> Tuple[List[ScanResults], List[Point]]:
         scanners = list(self.load())
         transform_to_first_scanner: List[Optional[Transform]] = [None] * len(scanners)
         transformed: List[ScanResults] = list(scanners)
         transform_to_first_scanner[0] = Transform.IDENTITY
+        absolute_scanner_positions = [None] * len(scanners)
+        absolute_scanner_positions[0] = Point(0, 0, 0)
         while any(t is None for t in transform_to_first_scanner[1:]):
             for scanner_index, scanner, transform in \
                     zip(range(1, len(scanners)), scanners[1:], transform_to_first_scanner[1:]):
@@ -330,13 +334,26 @@ class BeaconScanner(Challenge):
                             # this is a mapping to another scanner that already has a mapping to scanner zero
                             transform_to_first_scanner[scanner_index] = transform + transform_to_transform
                         transformed[scanner_index] = transform_to_first_scanner[scanner_index].apply(scanner)
+                        absolute_scanner_positions[scanner_index] = \
+                            transform_to_first_scanner[scanner_index].apply(ScanResults((Point(0, 0, 0),))).points[0]
                         assert sum(
                             1 for p in transformed[scanner_index] if any(
                                 t == p for tr in transformed[:scanner_index] + transformed[scanner_index+1:] for t in tr
                             )
                         ) >= 12
                         break
+        return transformed, absolute_scanner_positions  # type: ignore
+
+    @Challenge.register_part(0)
+    def how_many(self):
+        transformed, _ = self.solve()
         points = {
             p for s in transformed for p in s
         }
         self.output.write(f"{len(points)}\n")
+
+    @Challenge.register_part(1)
+    def max_distance(self):
+        _, positions = self.solve()
+        maximum = max(p1.distance_to(p2) for p1, p2 in itertools.combinations(positions, 2))
+        self.output.write(f"{maximum}\n")
