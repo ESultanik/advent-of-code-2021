@@ -71,7 +71,7 @@ def calculate_result(
         initial_y: int = 0
 ) -> Tuple[Result, int]:
     max_y: Optional[int] = None
-    for x, y in simulate(v_x, v_y):
+    for x, y in simulate(v_x, v_y, initial_x=initial_x, initial_y=initial_y):
         if max_y is None or y > max_y:
             max_y = y
         if target_min_x <= x <= target_max_x and target_min_y <= y <= target_max_y:
