@@ -365,9 +365,9 @@ class Octree:
     def add(self, region: Region):
         if region not in self.region:
             raise ValueError(f"Region {region} is not fully contained within {self}!")
-        work: List[Tuple[Octree, Region]] = [(self, region)]
+        work: List[Tuple[Octree, Region, List[Octree]]] = [(self, region, [])]
         while work:
-            octree, region = work.pop()
+            octree, region, ancestors = work.pop()
             if octree.is_on and region in octree.region:
                 # the region is already on!
                 continue
@@ -380,17 +380,30 @@ class Octree:
                 overlap = region & s
                 if overlap:
                     child = octree.children[pos]
-                    if child is None:
-                        child = Octree(s)
+                    if child is None or overlap == s:
+                        child = Octree(overlap, is_on=True)
                         octree.children[pos] = child
-                    elif child.is_on:
-                        # this subregion is already entirely enabled
-                        continue
-
-                    if overlap == s:
+                    elif overlap == child.region:
                         child.is_on = True
+                    elif overlap not in child.region:
+                        assert child.region != s
+                        # the child's region does not fully encompass this quadrant
+                        # so create a new intermediate node that is bigger
+                        intermediate = Octree(s)
+                        octree.children[pos] = intermediate
+                        if child not in overlap:
+                            work.extend((intermediate, node.region, ancestors + [octree]) for node in child.dfs())
+                        work.append((intermediate, overlap, ancestors + [octree]))
                     else:
-                        work.append((child, overlap))
+                        work.append((child, overlap, ancestors + [octree]))
+            for ancestor in reversed(ancestors + [octree]):
+                if ancestor.is_on:
+                    continue
+                elif all(c is not None and c.is_on for c in ancestor.children) and \
+                        sum(c.volume for c in ancestor.children) == ancestor.region.volume:
+                    ancestor.is_on = True
+                else:
+                    break
 
     def remove(self, region: "Region"):
         if region not in self.region:
@@ -410,25 +423,23 @@ class Octree:
                     if any(c is not None for c in parent.children):
                         break
                 continue
-            # break the region up into quadrants and remove them individually
-            for pos, s in octree.region.subregions():
-                overlap = region & s
-                if overlap:
-                    child = octree.children[pos]
-                    assert child is None or child.region == s
-                    if child is None:
-                        continue
-                    elif child.is_on:
-                        # this subregion was entirely enabled
-                        # so disable it because it will no longer be entirely enabled
-                        child.is_on = False
-                        # we now need to add "on" regions for everything in this octree node
-                        # that is _not_ in the overlap!
-                        for still_on in s - overlap:
-                            assert not (still_on & region)
-                            child.add(still_on)
-                    else:
-                        work.append((child, overlap, ancestors + [(octree, pos)]))
+            for i, child in enumerate(octree.children):
+                if child is None:
+                    continue
+                overlap = child.region & region
+                if not overlap:
+                    continue
+                elif child.is_on:
+                    # this subregion was entirely enabled
+                    # so disable it because it will no longer be entirely enabled
+                    child.is_on = False
+                    # we now need to add "on" regions for everything in this octree node
+                    # that is _not_ in the overlap!
+                    for still_on in child.region - overlap:
+                        assert not (still_on & region)
+                        child.add(still_on)
+                else:
+                    work.append((child, overlap, ancestors + [(octree, OctPos(i))]))
 
     def __contains__(self, region: Region):
         return region in self.region
@@ -462,4 +473,19 @@ class ReactorRobot(Challenge):
                     tree.add(region)
                 else:
                     tree.remove(region)
+        print(tree.volume)
+
+    @Challenge.register_part(1)
+    def full_reboot(self):
+        regions = tuple(self.load())
+        area = Region.bounding(*(region for _, region in regions))
+        tree = Octree(region=area)
+        for i, (is_on, region) in enumerate(regions):
+            if i == 31:
+                return
+            print(f"Step {i+1}/{len(regions)} (volume={tree.volume})")
+            if is_on:
+                tree.add(region)
+            else:
+                tree.remove(region)
         print(tree.volume)
