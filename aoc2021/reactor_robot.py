@@ -1,6 +1,6 @@
-from abc import ABC, abstractmethod
+from enum import IntEnum
 import re
-from typing import Iterable, Iterator, List, Tuple
+from typing import Callable, Iterator, List, Optional, Tuple, TypeVar, Union
 
 from . import Challenge
 
@@ -11,166 +11,455 @@ INPUT_PATTERN = re.compile(r"^\s*(?P<OnOff>on|off)\s+"
                            r"z\s*=\s*(?P<z1>-?\d+)\s*..\s*(?P<z2>-?\d+)\s*$")
 
 
-class Region(ABC):
-    @property
-    @abstractmethod
-    def volume(self) -> int:
-        raise NotImplementedError()
+class OctPos(IntEnum):
+    TopRightFront = 0
+    TopRightBack = 1
+    TopLeftFront = 2
+    TopLeftBack = 3
+    BottomRightFront = 4
+    BottomRightBack = 5
+    BottomLeftFront = 6
+    BottomLeftBack = 7
 
-    def __bool__(self):
-        return self.volume > 0
-
-    @abstractmethod
-    def intersects(self, region: "Region") -> bool:
-        raise NotImplementedError()
-
-    @abstractmethod
-    def __sub__(self, other) -> "Region":
-        raise NotImplementedError()
-
-
-class EmptyRegion(Region):
-    @property
-    def volume(self) -> int:
-        return 0
-
-    def intersects(self, region: "Region") -> bool:
-        return False
-
-    def __sub__(self, other):
-        return self
-
-    def __rsub__(self, other):
-        return other
-
-
-class Cube(Region):
-    def __init__(self, min_x: int, max_x: int, min_y: int, max_y: int, min_z: int, max_z: int):
-        if min_x > max_x:
-            min_x, max_x = max_x, min_x
-        if min_y > max_y:
-            min_y, max_y = max_y, min_y
-        if min_z > max_z:
-            min_z, max_z = max_z, min_z
-        self.min_x: int = min_x
-        self.max_x: int = max_x
-        self.min_y: int = min_y
-        self.max_y: int = max_y
-        self.min_z: int = min_z
-        self.max_z: int = max_z
+    @staticmethod
+    def pos(left: bool, bottom: bool, back: bool) -> "OctPos":
+        p = 0
+        if back:
+            p = 1
+        p <<= 1
+        if left:
+            p |= 1
+        p <<= 1
+        if bottom:
+            p |= 1
+        return OctPos(p)
 
     @property
-    def extrema(self) -> Tuple[int, int, int, int, int, int]:
-        return self.min_x, self.max_x, self.min_y, self.max_y, self.min_z, self.max_z
+    def is_back(self) -> bool:
+        return bool(self.value & 0b1)
+
+    @property
+    def is_left(self) -> bool:
+        return bool(self.value & 0b10)
+
+    @property
+    def is_bottom(self) -> bool:
+        return bool(self.value & 0b100)
+
+    @staticmethod
+    def get(location: "Region", inside: "Region") -> Iterator["OctPos"]:
+        if location.volume == 1:
+            if inside.volume < 8:
+                raise ValueError(f"Region {inside} is too small! Expected a volume of at least 8.")
+            elif not location in inside:
+                raise ValueError(f"Point {location} is not inside region {inside}")
+            is_left = location.min_point.x <= inside.min_point.x + (inside.max_point.x - inside.min_point.x) // 2
+            is_bottom = location.min_point.y <= inside.min_point.y + (inside.max_point.y - inside.min_point.y) // 2
+            is_back = location.min_point.z <= inside.min_point.z + (inside.max_point.z - inside.min_point.z) // 2
+            yield OctPos.pos(is_left, is_bottom, is_back)
+            return
+        raise NotImplementedError("TODO")
+
+
+class Region:
+    def __init__(self, min_point: "Point", max_point: "Point"):
+        self.min_point: Point = min_point
+        self.max_point: Point = max_point
+
+    def __hash__(self):
+        if self.volume == 0:
+            return 0
+        return hash((self.min_point, self.max_point))
+
+    def __eq__(self, other):
+        return isinstance(other, Region) and (
+                (self.min_point == other.min_point and self.max_point == other.max_point)
+                or
+                (self.volume == 0 and other.volume == 0)
+        )
+
+    @staticmethod
+    def bounding(*regions: "Region") -> "Region":
+        min_x = min(r.min_point.x for r in regions)
+        min_y = min(r.min_point.y for r in regions)
+        min_z = min(r.min_point.z for r in regions)
+        max_x = max(r.max_point.x for r in regions)
+        max_y = max(r.max_point.y for r in regions)
+        max_z = max(r.max_point.z for r in regions)
+        return Region(
+            min_point=Point(x=min_x, y=min_y, z=min_z),
+            max_point=Point(x=max_x, y=max_y, z=max_z)
+        )
+
+    def double(self) -> "Region":
+        half = Point(x=max(self.width // 2, 1), y=max(self.height // 2, 1), z=max(self.depth // 2, 1))
+        return Region(min_point=self.min_point - half, max_point=self.max_point + half)
 
     @property
     def width(self) -> int:
-        return max(self.max_x - self.min_x, 0)
+        return max(self.max_point.x - self.min_point.x + 1, 0)
 
     @property
     def height(self) -> int:
-        return max(self.max_y - self.min_y, 0)
+        return max(self.max_point.y - self.min_point.y + 1, 0)
 
     @property
     def depth(self) -> int:
-        return max(self.max_z - self.min_z, 0)
+        return max(self.max_point.z - self.min_point.z + 1, 0)
 
     @property
     def volume(self) -> int:
         return self.width * self.height * self.depth
 
-    def intersects(self, region: Region) -> bool:
-        if not isinstance(region, Cube):
-            return region.intersects(self)
+    def __bool__(self):
+        return self.volume > 0
+
+    def subregions(self) -> Iterator[Tuple[OctPos, "Region"]]:
+        mid_x = self.min_point.x + (self.max_point.x - self.min_point.x) // 2
+        mid_y = self.min_point.y + (self.max_point.y - self.min_point.y) // 2
+        mid_z = self.min_point.z + (self.max_point.z - self.min_point.z) // 2
+        x_possibilities = [(True, self.min_point.x, mid_x)]
+        if mid_x < self.max_point.x:
+            x_possibilities.append((False, mid_x + 1, self.max_point.x))
+        y_possibilities = [(True, self.min_point.y, mid_y)]
+        if mid_y < self.max_point.y:
+            y_possibilities.append((False, mid_y + 1, self.max_point.y))
+        z_possibilities = [(True, self.min_point.z, mid_z)]
+        if mid_z < self.max_point.z:
+            z_possibilities.append((False, mid_z + 1, self.max_point.z))
+        for left, min_x, max_x in x_possibilities:
+            for bottom, min_y, max_y in y_possibilities:
+                for back, min_z, max_z in z_possibilities:
+                    yield OctPos.pos(left, bottom, back), Region(
+                        min_point=Point(x=min_x, y=min_y, z=min_z),
+                        max_point=Point(x=max_x, y=max_y, z=max_z)
+                    )
+
+    def __contains__(self, item):
+        """Returns whether this region fully contains the given region or point"""
+        if isinstance(item, Point):
+            return self.min_point.x <= item.x <= self.max_point.x and \
+                   self.min_point.y <= item.y <= self.max_point.y and \
+                   self.min_point.z <= item.z <= self.max_point.z
+        elif isinstance(item, Region):
+            return self.min_point.x <= item.min_point.x <= item.max_point.x <= self.max_point.x and \
+                   self.min_point.y <= item.min_point.y <= item.max_point.y <= self.max_point.y and \
+                   self.min_point.z <= item.min_point.z <= item.max_point.z <= self.max_point.z
+        else:
+            return False
+
+    def intersects(self, region: "Region") -> bool:
+        """Returns whether this region intersects with the other region"""
         return not (
-            self.max_x < region.min_x  # our right face is to the left of their left face
+            self.max_point.x < region.min_point.x  # our right face is to the left of their left face
             or
-            region.max_x < self.min_x  # their right face is to the left of our left face
+            region.max_point.x < self.min_point.x  # their right face is to the left of our left face
             or
-            self.max_z < region.min_z  # our front face is behind their back face
+            self.max_point.z < region.min_point.z  # our front face is behind their back face
             or
-            region.max_z < self.min_z  # their front face is behind our back face
+            region.max_point.z < self.min_point.z  # their front face is behind our back face
             or
-            self.max_y < region.min_y  # our top face is under their bottom face
+            self.max_point.y < region.min_point.y  # our top face is under their bottom face
             or
-            region.max_y < self.min_y  # their top face is under our back face
+            region.max_point.y < self.min_point.y  # their top face is under our back face
         )
 
-    def __sub__(self, other) -> Region:
-        if not isinstance(other, Cube):
-            raise NotImplementedError()
-        if not other.intersects(self):
-            # they don't intersect us
-            return self
-        # split ourself into 27 cubes, some of which may be of zero volume
-        components: List[Cube] = []
-        for min_x, max_x in ((self.min_x, other.min_x - 1), (other.max_x + 1, self.max_x)):
-            for min_y, max_y in ((self.min_y, other.min_y - 1), (other.max_y + 1, self.max_y)):
-                for min_z, max_z in ((self.min_z, other.min_z - 1), (other.max_z + 1, self.max_z)):
-                    cube = Cube(min_x, max_x, min_y, max_y, min_z, max_z)
-                    if cube:
-                        components.append(cube)
-        if len(components) == 1:
-            return components[0]
-        elif not components:
-            return EmptyRegion()
-        else:
-            return CompoundRegion(components)
+    def intersect(self, region: "Region") -> "Region":
+        return Region(
+            min_point=Point(
+                x=max(region.min_point.x, self.min_point.x),
+                y=max(region.min_point.y, self.min_point.y),
+                z=max(region.min_point.z, self.min_point.z)
+            ),
+            max_point=Point(
+                x=min(region.max_point.x, self.max_point.x),
+                y=min(region.max_point.y, self.max_point.y),
+                z=min(region.max_point.z, self.max_point.z)
+            )
+        )
+
+    __and__ = intersect
+
+    def union(self, region: "Region") -> "Region":
+        return Region(
+            min_point=Point(
+                x=min(region.min_point.x, self.min_point.x),
+                y=min(region.min_point.y, self.min_point.y),
+                z=min(region.min_point.z, self.min_point.z)
+            ),
+            max_point=Point(
+                x=max(region.max_point.x, self.max_point.x),
+                y=max(region.max_point.y, self.max_point.y),
+                z=max(region.max_point.z, self.max_point.z)
+            )
+        )
+
+    __or__ = union
+
+    def __sub__(self, other: "Region") -> Iterator["Region"]:
+        if self == other:
+            return
+        overlap = self & other
+        if not overlap:
+            return
+        x_positions = (
+            (self.min_point.x, overlap.min_point.x - 1),
+            (overlap.min_point.x, overlap.max_point.x),
+            (overlap.max_point.x + 1, self.max_point.x)
+        )
+        y_positions = (
+            (self.min_point.y, overlap.min_point.y - 1),
+            (overlap.min_point.y, overlap.max_point.y),
+            (overlap.max_point.y + 1, self.max_point.y)
+        )
+        z_positions = (
+            (self.min_point.z, overlap.min_point.z - 1),
+            (overlap.min_point.z, overlap.max_point.z),
+            (overlap.max_point.z + 1, self.max_point.z)
+        )
+        for min_x, max_x in x_positions:
+            if min_x > max_x:
+                continue
+            for min_y, max_y in y_positions:
+                if min_y > max_y:
+                    continue
+                for min_z, max_z in z_positions:
+                    if min_z > max_z:
+                        continue
+                    region = Region(
+                        min_point=Point(min_x, min_y, min_z),
+                        max_point=Point(max_x, max_y, max_z)
+                    )
+                    if region and region != overlap:
+                        assert not (region & overlap)
+                        assert region in self
+                        yield region
 
     def __repr__(self):
-        return f"{self.__class__.__name__}(" \
-               f"{self.min_x},{self.max_x}," \
-               f"{self.min_y},{self.max_y}," \
-               f"{self.min_z},{self.max_z})"
+        return f"{self.__class__.__name__}(min_point={self.min_point!r}, max_point={self.max_point!r})"
+
+    def __str__(self):
+        return f"x={self.min_point.x}..{self.max_point.x}," \
+               f"y={self.min_point.y}..{self.max_point.y}," \
+               f"z={self.min_point.z}..{self.max_point.z}"
 
 
-class CompoundRegion(Region):
-    def __init__(self, sub_regions: Iterable[Region]):
-        self.sub_regions = tuple(sub_regions)
+class Point(Region):
+    def __init__(self, x: int, y: int, z: int):
+        super().__init__(None, None)  # type: ignore
+        self.x: int = x
+        self.y: int = y
+        self.z: int = z
+        self.min_point = self
+        self.max_point = self
 
-    def intersects(self, region: Region) -> bool:
-        if isinstance(region, Cube):
-            return any(r.intersects(region) for r in self.sub_regions)
-        elif isinstance(region, CompoundRegion):
-            return any(r1.intersects(r2) for r1 in self.sub_regions for r2 in region.sub_regions)
-        raise NotImplementedError()
+    @property
+    def width(self) -> int:
+        return 1
+
+    @property
+    def height(self) -> int:
+        return 1
+
+    @property
+    def depth(self) -> int:
+        return 1
 
     @property
     def volume(self) -> int:
-        return sum(r.volume for r in self.sub_regions)
+        return 1
 
-    def __sub__(self, other) -> "Region":
-        components: List[Region] = []
-        for s in self.sub_regions:
-            result = s - other
-            if isinstance(result, CompoundRegion):
-                components.extend(result.sub_regions)
-            elif result:
-                components.append(result)
-        return CompoundRegion(components)
+    def __eq__(self, other):
+        if isinstance(other, Point):
+            return self.x == other.x and self.y == other.y and self.z == other.z
+        elif isinstance(other, Region):
+            return other == self
+        else:
+            return False
+
+    def _arithmetic(
+            self, other: Union[int, "Point", Tuple[int, int, int]], operator: Callable[[int, int], int]
+    ) -> "Point":
+        if isinstance(other, Point):
+            return Point(
+                x=operator(self.x, other.x),
+                y=operator(self.y, other.y),
+                z=operator(self.z, other.z)
+            )
+        elif isinstance(other, int):
+            return self._arithmetic((other, other, other), operator)
+        elif len(other) == 3:
+            return Point(
+                x=operator(self.x, other[0]),
+                y=operator(self.y, other[1]),
+                z=operator(self.z, other[2])
+            )
+        else:
+            raise NotImplementedError()
+
+    def __add__(self, other) -> "Point":
+        return self._arithmetic(other, lambda a, b: a + b)
+
+    __radd__ = __add__
+
+    def __sub__(self, other) -> "Point":
+        return self._arithmetic(other, lambda a, b: a - b)
+
+    def __rsub__(self, other) -> "Point":
+        return self._arithmetic(other, lambda a, b: b - a)
+
+    def __mul__(self, other) -> "Point":
+        return self._arithmetic(other, lambda a, b: a * b)
+
+    __rmul__ = __mul__
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}(x={self.x}, y={self.y}, z={self.z})"
+
+    def __str__(self):
+        return f"({self.x}, {self.y}, {self.z})"
+
+
+T = TypeVar("T")
+
+
+class Octree:
+    def __init__(self, region: Region, is_on: bool = False):
+        self.region: Region = region
+        self.children: List[Optional[Octree]] = [None] * 8
+        self._on: bool = is_on
+
+    def clone(self: T) -> T:
+        cloned = self.__class__(region=self.region, is_on=self.is_on)
+        cloned.children = list(self.children)
+        return cloned
+
+    @property
+    def is_on(self) -> bool:
+        return self._on
+
+    @is_on.setter
+    def is_on(self, on: bool):
+        self.children = [None] * 8
+        self._on = on
+
+    def __getitem__(self, item: OctPos) -> Optional["Octree"]:
+        return self.children[item.value]
+
+    def __setitem__(self, key: OctPos, value: Optional["Octree"]):
+        self.children[key.value] = value
+
+    @property
+    def volume(self) -> int:
+        return sum(d.region.volume for d in self.dfs())
+
+    def dfs(self) -> Iterator["Octree"]:
+        stack: List[Octree] = [self]
+        while stack:
+            node = stack.pop()
+            if node.is_on:
+                yield node
+            else:
+                stack.extend((node for node in node.children if node is not None))
+
+    def add(self, region: Region):
+        if region not in self.region:
+            raise ValueError(f"Region {region} is not fully contained within {self}!")
+        work: List[Tuple[Octree, Region]] = [(self, region)]
+        while work:
+            octree, region = work.pop()
+            if octree.is_on and region in octree.region:
+                # the region is already on!
+                continue
+            elif region == octree.region:
+                # the region exactly matches our region
+                octree.is_on = True
+                continue
+            # break the region up into quadrants and add them individually
+            for pos, s in octree.region.subregions():
+                overlap = region & s
+                if overlap:
+                    child = octree.children[pos]
+                    if child is None:
+                        child = Octree(s)
+                        octree.children[pos] = child
+                    elif child.is_on:
+                        # this subregion is already entirely enabled
+                        continue
+
+                    if overlap == s:
+                        child.is_on = True
+                    else:
+                        work.append((child, overlap))
+
+    def remove(self, region: "Region"):
+        if region not in self.region:
+            return
+        work: List[Tuple[Octree, Region, List[Tuple[Octree, OctPos]]]] = [(self, region, [])]
+        while work:
+            octree, region, ancestors = work.pop()
+            if region == octree.region:
+                # the region exactly matches this node's region
+                octree.is_on = False
+                assert ancestors[-1][0].children[ancestors[-1][1]] is octree
+                for (parent, child_pos) in reversed(ancestors):
+                    if parent.is_on:
+                        parent.is_on = False
+                        continue
+                    parent.children[child_pos] = None
+                    if any(c is not None for c in parent.children):
+                        break
+                continue
+            # break the region up into quadrants and remove them individually
+            for pos, s in octree.region.subregions():
+                overlap = region & s
+                if overlap:
+                    child = octree.children[pos]
+                    assert child is None or child.region == s
+                    if child is None:
+                        continue
+                    elif child.is_on:
+                        # this subregion was entirely enabled
+                        # so disable it because it will no longer be entirely enabled
+                        child.is_on = False
+                        # we now need to add "on" regions for everything in this octree node
+                        # that is _not_ in the overlap!
+                        for still_on in s - overlap:
+                            assert not (still_on & region)
+                            child.add(still_on)
+                    else:
+                        work.append((child, overlap, ancestors + [(octree, pos)]))
+
+    def __contains__(self, region: Region):
+        return region in self.region
+
+    def __str__(self):
+        num_children = f"[{sum(1 for c in self.children if c is not None)}]"
+        return f"{[num_children, 'on'][self.is_on]} {self.region!s}"
 
 
 class ReactorRobot(Challenge):
     day = 22
 
-    def load(self) -> Iterator[Tuple[bool, Cube]]:
+    def load(self) -> Iterator[Tuple[bool, Region]]:
         with open(self.input_path, "r") as f:
             for line in f:
                 m = INPUT_PATTERN.match(line.strip())
                 if m is None:
                     continue
-                yield m.group("OnOff") == "on", Cube(
-                    int(m.group("x1")), int(m.group("x2")),
-                    int(m.group("y1")), int(m.group("y2")),
-                    int(m.group("z1")), int(m.group("z2"))
+                yield m.group("OnOff") == "on", Region(
+                    min_point=Point(x=int(m.group("x1")), y=int(m.group("y1")), z=int(m.group("z1"))),
+                    max_point=Point(x=int(m.group("x2")), y=int(m.group("y2")), z=int(m.group("z2")))
                 )
 
     @Challenge.register_part(0)
     def cubes_on(self):
-        grid = EmptyRegion()
+        init_area = Region(min_point=Point(-50, -50, -50), max_point=Point(50, 50, 50))
+        tree = Octree(region=init_area)
         for is_on, region in self.load():
-            if all(-50 <= e <= 50 for e in region.extrema):
-                grid = grid - region
+            if region in init_area:
                 if is_on:
-                    grid = CompoundRegion((grid, region))
-        print(grid.volume)
+                    tree.add(region)
+                else:
+                    tree.remove(region)
+        print(tree.volume)
