@@ -2,6 +2,8 @@ from enum import IntEnum
 import re
 from typing import Callable, Iterator, List, Optional, Tuple, TypeVar, Union
 
+from tqdm import tqdm
+
 from . import Challenge
 
 
@@ -65,6 +67,11 @@ class Region:
     def __init__(self, min_point: "Point", max_point: "Point"):
         self.min_point: Point = min_point
         self.max_point: Point = max_point
+        #self._volume: Optional[int] = None
+        if min_point is not None and max_point is not None:
+            self.volume: int = self.width * self.height * self.depth
+        else:
+            self.volume: int = 0
 
     def __hash__(self):
         if self.volume == 0:
@@ -107,9 +114,11 @@ class Region:
     def depth(self) -> int:
         return max(self.max_point.z - self.min_point.z + 1, 0)
 
-    @property
-    def volume(self) -> int:
-        return self.width * self.height * self.depth
+    # @property
+    # def volume(self) -> int:
+    #     if self._volume is None:
+    #         self._volume = self.width * self.height * self.depth
+    #     return self._volume
 
     def __bool__(self):
         return self.volume > 0
@@ -252,6 +261,7 @@ class Point(Region):
         self.z: int = z
         self.min_point = self
         self.max_point = self
+        self.volume = 1
 
     @property
     def width(self) -> int:
@@ -263,10 +273,6 @@ class Point(Region):
 
     @property
     def depth(self) -> int:
-        return 1
-
-    @property
-    def volume(self) -> int:
         return 1
 
     def __eq__(self, other):
@@ -366,80 +372,87 @@ class Octree:
         if region not in self.region:
             raise ValueError(f"Region {region} is not fully contained within {self}!")
         work: List[Tuple[Octree, Region, List[Octree]]] = [(self, region, [])]
-        while work:
-            octree, region, ancestors = work.pop()
-            if octree.is_on and region in octree.region:
-                # the region is already on!
-                continue
-            elif region == octree.region:
-                # the region exactly matches our region
-                octree.is_on = True
-                continue
-            # break the region up into quadrants and add them individually
-            for pos, s in octree.region.subregions():
-                overlap = region & s
-                if overlap:
-                    child = octree.children[pos]
-                    if child is None or overlap == s:
-                        child = Octree(overlap, is_on=True)
-                        octree.children[pos] = child
-                    elif overlap == child.region:
-                        child.is_on = True
-                    elif overlap not in child.region:
-                        assert child.region != s
-                        # the child's region does not fully encompass this quadrant
-                        # so create a new intermediate node that is bigger
-                        intermediate = Octree(s)
-                        octree.children[pos] = intermediate
-                        if child not in overlap:
-                            work.extend((intermediate, node.region, ancestors + [octree]) for node in child.dfs())
-                        work.append((intermediate, overlap, ancestors + [octree]))
-                    else:
-                        work.append((child, overlap, ancestors + [octree]))
-            for ancestor in reversed(ancestors + [octree]):
-                if ancestor.is_on:
+        with tqdm(desc=f"adding", total=region.volume, unit="regions", leave=False, delay=2.0) as t:
+            while work:
+                octree, region, ancestors = work.pop()
+                if octree.is_on and region in octree.region:
+                    # the region is already on!
+                    t.update(octree.volume)
                     continue
-                elif all(c is not None and c.is_on for c in ancestor.children) and \
-                        sum(c.volume for c in ancestor.children) == ancestor.region.volume:
-                    ancestor.is_on = True
-                else:
-                    break
+                elif region == octree.region:
+                    # the region exactly matches our region
+                    octree.is_on = True
+                    t.update(octree.volume)
+                    continue
+                # break the region up into quadrants and add them individually
+                for pos, s in octree.region.subregions():
+                    overlap = region & s
+                    if overlap:
+                        t.update(overlap.volume)
+                        child = octree.children[pos]
+                        if child is None or overlap == s or child.region in overlap:
+                            child = Octree(overlap, is_on=True)
+                            octree.children[pos] = child
+                        elif overlap == child.region:
+                            child.is_on = True
+                        elif overlap not in child.region:
+                            assert child.region != s
+                            # the child's region does not fully encompass this quadrant
+                            # so create a new intermediate node that is bigger
+                            intermediate = Octree(s)
+                            octree.children[pos] = intermediate
+                            work.extend(
+                                (intermediate, node.region, ancestors + [octree]) for node in child.dfs()
+                                if node.region not in overlap
+                            )
+                            work.append((intermediate, overlap, ancestors + [octree]))
+                        else:
+                            work.append((child, overlap, ancestors + [octree]))
+                for ancestor in reversed(ancestors + [octree]):
+                    if ancestor.is_on:
+                        continue
+                    elif all(c is not None and c.is_on for c in ancestor.children) and \
+                            sum(c.volume for c in ancestor.children) == ancestor.region.volume:
+                        ancestor.is_on = True
+                    else:
+                        break
 
     def remove(self, region: "Region"):
         if region not in self.region:
             return
         work: List[Tuple[Octree, Region, List[Tuple[Octree, OctPos]]]] = [(self, region, [])]
-        while work:
-            octree, region, ancestors = work.pop()
-            if region == octree.region:
-                # the region exactly matches this node's region
-                octree.is_on = False
-                assert ancestors[-1][0].children[ancestors[-1][1]] is octree
-                for (parent, child_pos) in reversed(ancestors):
-                    if parent.is_on:
-                        parent.is_on = False
-                        continue
-                    parent.children[child_pos] = None
-                    if any(c is not None for c in parent.children):
-                        break
-                continue
-            for i, child in enumerate(octree.children):
-                if child is None:
-                    continue
-                overlap = child.region & region
-                if not overlap:
-                    continue
-                elif child.is_on:
-                    # this subregion was entirely enabled
-                    # so disable it because it will no longer be entirely enabled
-                    child.is_on = False
-                    # we now need to add "on" regions for everything in this octree node
-                    # that is _not_ in the overlap!
-                    for still_on in child.region - overlap:
-                        assert not (still_on & region)
-                        child.add(still_on)
+        with tqdm(desc=f"removing", total=1, unit="regions", leave=False, delay=2.0) as t:
+            while work:
+                octree, region, ancestors = work.pop()
+                t.update(1)
+                if octree.region in region:
+                    # this node is completely contained within the removed region
+                    octree.is_on = False
+                    assert ancestors[-1][0].children[ancestors[-1][1]] is octree
                 else:
-                    work.append((child, overlap, ancestors + [(octree, OctPos(i))]))
+                    for i, child in enumerate(octree.children):
+                        if child is None:
+                            continue
+                        overlap = child.region & region
+                        if not overlap:
+                            continue
+                        elif child.is_on:
+                            # this subregion was entirely enabled
+                            # so disable it because it will no longer be entirely enabled
+                            child.is_on = False
+                            # we now need to add "on" regions for everything in this octree node
+                            # that is _not_ in the overlap!
+                            for still_on in child.region - overlap:
+                                assert not (still_on & region)
+                                child.add(still_on)
+                        else:
+                            work.append((child, overlap, ancestors + [(octree, OctPos(i))]))
+                            t.total += 1
+                if all(c is None for c in octree.children):
+                    for (parent, child_pos) in reversed(ancestors):
+                        parent.children[child_pos] = None
+                        if any(c is not None for c in parent.children):
+                            break
 
     def __contains__(self, region: Region):
         return region in self.region
@@ -480,12 +493,12 @@ class ReactorRobot(Challenge):
         regions = tuple(self.load())
         area = Region.bounding(*(region for _, region in regions))
         tree = Octree(region=area)
-        for i, (is_on, region) in enumerate(regions):
-            if i == 31:
-                return
-            print(f"Step {i+1}/{len(regions)} (volume={tree.volume})")
-            if is_on:
-                tree.add(region)
-            else:
-                tree.remove(region)
+        with tqdm(desc="rebooting", total=len(regions), unit="steps", leave=False) as t:
+            for i, (is_on, region) in enumerate(regions):
+                t.write(f"{['REMOVE', 'ADD'][is_on]} {region} ({sum(1 for _ in tree.dfs())} nodes)")
+                t.update(1)
+                if is_on:
+                    tree.add(region)
+                else:
+                    tree.remove(region)
         print(tree.volume)
