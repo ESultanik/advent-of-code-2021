@@ -1,6 +1,8 @@
+import functools
 from enum import IntEnum
+from functools import lru_cache
 import re
-from typing import Callable, Iterator, List, Optional, Tuple, TypeVar, Union
+from typing import Callable, Iterator, List, Optional, Sequence, Tuple, TypeVar, Union
 
 from tqdm import tqdm
 
@@ -263,6 +265,9 @@ class Point(Region):
         self.max_point = self
         self.volume = 1
 
+    def __hash__(self):
+        return hash((self.x, self.y, self.z))
+
     @property
     def width(self) -> int:
         return 1
@@ -488,17 +493,24 @@ class ReactorRobot(Challenge):
                     tree.remove(region)
         print(tree.volume)
 
+    @staticmethod
+    @functools.lru_cache(maxsize=None)
+    def simulate(regions: Sequence[Tuple[bool, Region]]) -> int:
+        voxels: List[Tuple[bool, Region]] = []
+        volume = 0
+        for is_on, region in tqdm(
+                reversed(regions), desc="rebooting", total=len(regions), unit="steps", leave=False, delay=2.0
+        ):
+            if is_on:
+                overlaps: List[Region] = []
+                for _, voxel in voxels:
+                    overlap = region & voxel
+                    if overlap:
+                        overlaps.append(overlap)
+                volume += region.volume - ReactorRobot.simulate(tuple((True, overlap) for overlap in overlaps))
+            voxels.append((True, region))
+        return volume
+
     @Challenge.register_part(1)
     def full_reboot(self):
-        regions = tuple(self.load())
-        area = Region.bounding(*(region for _, region in regions))
-        tree = Octree(region=area)
-        with tqdm(desc="rebooting", total=len(regions), unit="steps", leave=False) as t:
-            for i, (is_on, region) in enumerate(regions):
-                t.write(f"{['REMOVE', 'ADD'][is_on]} {region} ({sum(1 for _ in tree.dfs())} nodes)")
-                t.update(1)
-                if is_on:
-                    tree.add(region)
-                else:
-                    tree.remove(region)
-        print(tree.volume)
+        print(self.simulate(tuple(self.load())))
