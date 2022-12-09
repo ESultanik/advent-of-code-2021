@@ -64,6 +64,16 @@ class Instruction:
             arg = args[0]
         return cls(opcode=op, register=reg, operand=arg)
 
+    def __str__(self):
+        if self.operand is not None:
+            if isinstance(self.operand, Register):
+                opval = self.operand.value
+            else:
+                opval = str(self.operand)
+            return f"{self.opcode.value} {self.register.value} {opval}"
+        else:
+            return f"{self.opcode.value} {self.register.value}"
+
 
 @dataclass(frozen=True)
 class Program:
@@ -83,6 +93,114 @@ class Interpreter(ABC):
     @abstractmethod
     def run(self, program: Program):
         raise NotImplementedError()
+
+
+class BackwardSolver(Interpreter):
+    def __init__(self):
+        self.regs: Dict[Register, Union[int, Symbolic]] = {
+            Register.W: z3.Int("finalw"),
+            Register.X: z3.Int("finalx"),
+            Register.Y: z3.Int("finaly"),
+            Register.Z: 0
+        }
+        self._var_counter: int = 0
+        self.inputs: List[Variable] = []
+        self.solver = z3.Solver()
+        self.solver.push()
+
+    def solve(self, min_value: Optional[int] = None) -> Optional[int]:
+        if min_value is not None:
+            val = 0
+            for i in self.inputs:
+                val *= 10
+                if val == 0:
+                    val = i
+                else:
+                    val += i
+            result = self.solver.check(val > min_value)
+        else:
+            result = self.solver.check()
+        if result == z3.sat:
+            model = self.solver.model()
+            v = 0
+            for i in self.inputs:
+                v *= 10
+                v += model[i].as_long()
+            return v
+        else:
+            return None
+
+    def maximum_input(self) -> int:
+        feasible = self.solve()
+        if feasible is None:
+            raise ValueError("No solutions found!")
+        print(feasible)
+        while True:
+            bigger = self.solve(min_value=feasible)
+            if bigger is None:
+                return feasible
+            print(bigger)
+            assert bigger > feasible
+            feasible = bigger
+
+    def new_version(self, reg: Register) -> Symbolic:
+        var = z3.Int(f"{reg.value}{self._var_counter}")
+        self._var_counter += 1
+        self.regs[reg] = var
+        return var
+
+    def new_input(self) -> Symbolic:
+        var = z3.Int(f"inp{len(self.inputs)}")
+        self.inputs.insert(0, var)
+        self.solver.add(var >= 1)
+        self.solver.add(var <= 9)
+        return var
+
+    def execute(self, instruction: Instruction):
+        result = self.regs[instruction.register]
+        if isinstance(instruction.operand, Register):
+            operand = self.regs[instruction.operand]
+        else:
+            operand = instruction.operand
+        if isinstance(result, int) and result == 0 and instruction.opcode == Opcode.ADD:
+            self.solver.add(operand == 0)
+            return
+        elif isinstance(result, int) and result == 1 and instruction.opcode == Opcode.MULTIPLY:
+            self.solver.add(operand == 1)
+            return
+        prev_version = self.new_version(instruction.register)
+        if instruction.opcode == Opcode.ADD:
+            self.solver.add(result == prev_version + operand)
+        elif instruction.opcode == Opcode.MULTIPLY:
+            self.solver.add(result == prev_version * operand)
+        elif instruction.opcode == Opcode.DIVIDE:
+            self.solver.add(result == prev_version / operand)
+            self.solver.add(operand != 0)
+        elif instruction.opcode == Opcode.MODULUS:
+            self.solver.add(result == prev_version % operand)
+            self.solver.add(prev_version >= 0)
+            self.solver.add(operand > 0)
+        elif instruction.opcode == Opcode.INPUT:
+            self.solver.add(result == self.new_input())
+        elif instruction.opcode == Opcode.EQUAL:
+            self.solver.add(result == z3.If(prev_version == operand, 1, 0))
+            return
+            can_be_zero = self.solver.check(result == 0) == z3.sat
+            can_be_one = self.solver.check(result == 1) == z3.sat
+            if can_be_one and not can_be_zero:
+                print(f"{instruction!s} is always true!")
+                self.solver.add(prev_version == operand)
+            elif can_be_zero and not can_be_one:
+                print(f"{instruction!s} is always false!")
+                self.solver.add(prev_version != operand)
+            else:
+                print(f"{instruction!s} is undetermined...")
+                self.solver.add(result == z3.If(prev_version == operand, 1, 0))
+
+    def run(self, program: Program):
+        for inst in reversed(program.instructions):
+            # interpret the program in reverse
+            self.execute(inst)
 
 
 class ALU(Interpreter):
@@ -188,17 +306,7 @@ class ArithmeticLogicUnit(Challenge):
 
     @Challenge.register_part(0)
     def largest_model_number(self):
-        alu = ALU()
-        alu.solver.push()
+        alu = BackwardSolver()
         program = Program.parse(self.input_path)
         alu.run(program)
-        alu.simplify()
-        alu.solver.add(alu.regs[Register.Z] == 0)
-        value = 0
-        for i in alu.inputs:
-            value *= 10
-            value += i
-        if alu.solver.check(value > 99999999999991) == z3.sat:
-            print(alu.solver.model())
-        else:
-            print("UNSAT")
+        alu.maximum_input()
