@@ -73,7 +73,7 @@ class Move:
             yield pos
 
 
-class InvalidMoveError(ValueError):
+class InvalidMoveError(RuntimeError):
     pass
 
 
@@ -207,6 +207,33 @@ class State:
                         if pos.location not in valid_locations or \
                                 (already_got_goal_position and pos.location == spot.goal_location):
                             continue
+                        # do not move to a location in the hallway that prevents other Amphipods in our goal room
+                        # from moving to their goal room
+                        num_aliens_in_goal = sum(
+                            1 for s in self.locations[spot.goal_location]
+                            if s is not None and s.goal_location != spot.goal_location and (
+                                s.goal_location.meets_hallway_at_index
+                                < pos.index < spot.goal_location.meets_hallway_at_index
+                                or
+                                spot.goal_location.meets_hallway_at_index
+                                < pos.index < s.goal_location.meets_hallway_at_index
+                            )
+                        )
+                        if num_aliens_in_goal > 0:
+                            if spot.goal_location.meets_hallway_at_index > pos.index:
+                                num_open_spots = sum(
+                                    1 for s in
+                                    self.locations[Location.HALLWAY][spot.goal_location.meets_hallway_at_index+1:]
+                                    if s is None
+                                )
+                            else:
+                                num_open_spots = sum(
+                                    1 for s in
+                                    self.locations[Location.HALLWAY][:spot.goal_location.meets_hallway_at_index]
+                                    if s is None
+                                )
+                            if num_open_spots < num_aliens_in_goal:
+                                continue
                         move = Move(
                             from_position=Position(location, index=i),
                             to_position=pos
@@ -222,10 +249,15 @@ class State:
         amphipod = self[move.from_position]
         if amphipod is None:
             raise InvalidMoveError(f"No Amphipod at space {move.from_position}")
-        if move.to_position.location != Location.HALLWAY and move.to_position.location != amphipod.goal_location:
-            raise InvalidMoveError(f"Cannot move {amphipod.code} to position {move.to_position} because it is not its "
-                                   f"goal room")
-        elif move.from_position.location == Location.HALLWAY and move.to_position.location == Location.HALLWAY:
+        if move.to_position.location != Location.HALLWAY:
+            if move.to_position.location != amphipod.goal_location:
+                raise InvalidMoveError(f"Cannot move {amphipod.code} to position {move.to_position} because it is not "
+                                       f"its goal room")
+            goal_room = self.locations[amphipod.goal_location]
+            if any(s.goal_location != amphipod.goal_location for s in goal_room if s is not None):
+                raise InvalidMoveError(f"Cannot move {amphipod.code} to position {move.to_position} because it "
+                                       f"contains other amphipods that need to leave, first")
+        if move.from_position.location == Location.HALLWAY and move.to_position.location == Location.HALLWAY:
             raise InvalidMoveError("A move from the hallway must be into a room")
         num_moves = 0
         for pos in move.path:
@@ -344,6 +376,18 @@ class SearchNode:
 
             min_path_len = 0
             for pos in Move(from_position=position, to_position=goal_pos).path:
+                if position.location == Location.HALLWAY:
+                    # make sure our path isn't blocked in an impossible way
+                    node = self.state[pos]
+                    if node is not None and (
+                            node.goal_location.meets_hallway_at_index
+                            < position.index < goal_pos.location.meets_hallway_at_index
+                            or
+                            goal_pos.location.meets_hallway_at_index
+                            < position.index < node.goal_location.meets_hallway_at_index
+                    ):
+                        min_path_len = 999999999999999999999999999
+                        break
                 min_path_len += amphipod.energy_per_step
                 # blocking_amphipod = self.state[pos]
                 # if blocking_amphipod is not None:
@@ -411,26 +455,6 @@ class AmphipodChallenge(Challenge):
         with open(self.input_path, "r") as f:
             state = State.parse(f.read())
         print(str(state))
-        # for fl, fi, tl, ti in ((
-        #         (Location.ROOM3, 0, Location.HALLWAY, 3),
-        #         (Location.ROOM2, 0, Location.ROOM3, 0),
-        #         (Location.ROOM2, 1, Location.HALLWAY, 5),
-        #         (Location.HALLWAY, 3, Location.ROOM2, 1),
-        #         (Location.ROOM4, 0, Location.HALLWAY, 7),
-        #         (Location.ROOM4, 1, Location.HALLWAY, 9),
-        #         (Location.HALLWAY, 7, Location.ROOM4, 1),
-        #         (Location.HALLWAY, 5, Location.ROOM4, 0)
-        #                        )):
-        #     if fi == 5:
-        #         breakpoint()
-        #     next_state = state.apply(Move(from_position=Position(fl, fi), to_position=Position(tl, ti)))[0]
-        #     if not any(s == next_state for _, s, _ in state.successors()):
-        #         print("======== BAD ========")
-        #         for _, s, _ in state.successors():
-        #             print(str(s))
-        #         exit(1)
-        #     print(str(next_state))
-        #     state = next_state
         solution = solve(state)
         print("==================[ SOLUTION ]==================")
         print(str(solution))
