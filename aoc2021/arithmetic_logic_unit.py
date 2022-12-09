@@ -1,5 +1,8 @@
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from enum import Enum
-from typing import Dict, List, Union
+from pathlib import Path
+from typing import Dict, List, Optional, Sequence, Union
 
 import z3
 
@@ -17,7 +20,72 @@ class Register(Enum):
     W = "w"
 
 
-class ALU:
+class Opcode(Enum):
+    ADD = "add"
+    MULTIPLY = "mul"
+    DIVIDE = "div"
+    MODULUS = "mod"
+    EQUAL = "eql"
+    INPUT = "inp"
+
+
+@dataclass(frozen=True)
+class Instruction:
+    opcode: Opcode
+    register: Register
+    operand: Optional[Union[Register, int]]
+
+    @staticmethod
+    def parse_arg(arg: str) -> Union[int, Register]:
+        try:
+            return int(arg)
+        except ValueError:
+            pass
+        for r in Register:
+            if r.value == arg:
+                return r
+        raise ValueError()
+
+    @classmethod
+    def parse(cls, line: str) -> "Instruction":
+        cmd, raw_reg, *raw_args = line.split()
+        reg = Instruction.parse_arg(raw_reg)
+        args = [Instruction.parse_arg(a) for a in raw_args]
+        if len(args) > 1:
+            raise ValueError(f"Too many operands: {line!r}")
+        for op in Opcode:
+            if cmd == op.value:
+                break
+        else:
+            raise ValueError(f"Invalid opcode {cmd!r} in {line!r}")
+        if not args:
+            arg: Optional[Union[Register, int]] = None
+        else:
+            arg = args[0]
+        return cls(opcode=op, register=reg, operand=arg)
+
+
+@dataclass(frozen=True)
+class Program:
+    instructions: Sequence[Instruction]
+
+    @classmethod
+    def parse(cls, path: Path):
+        with open(path, "r") as f:
+            return Program(tuple(map(Instruction.parse, f)))
+
+
+class Interpreter(ABC):
+    @abstractmethod
+    def execute(self, instruction: Instruction):
+        raise NotImplementedError()
+
+    @abstractmethod
+    def run(self, program: Program):
+        raise NotImplementedError()
+
+
+class ALU(Interpreter):
     def __init__(self):
         self.regs: Dict[Register, Union[int, Symbolic]] = {
             Register.W: 0,
@@ -33,6 +101,19 @@ class ALU:
         for reg, value in list(self.regs.items()):
             if not isinstance(value, int):
                 self.regs[reg] = z3.simplify(value)
+
+    def execute(self, instruction: Instruction):
+        if not hasattr(self, instruction.opcode.value):
+            raise ValueError(f"Invalid opcode: {instruction.opcode}")
+        if instruction.operand is not None:
+            args = [instruction.operand]
+        else:
+            args = []
+        getattr(self, instruction.opcode.value)(instruction.register, *args)
+
+    def run(self, program: Program):
+        for instruction in program.instructions:
+            self.execute(instruction)
 
     def inp(self, reg: Register) -> Variable:
         var = z3.Int(f"inp{len(self.inputs)}")
@@ -109,44 +190,8 @@ class ArithmeticLogicUnit(Challenge):
     def largest_model_number(self):
         alu = ALU()
         alu.solver.push()
-        with open(self.input_path, "r") as f:
-            def parse_arg(arg: str) -> Union[int, Register]:
-                try:
-                    return int(arg)
-                except ValueError:
-                    pass
-                for r in Register:
-                    if r.value == arg:
-                        return r
-                raise ValueError()
-
-            for line in f:
-                print(line)
-                cmd, raw_reg, *raw_args = line.split()
-                reg = parse_arg(raw_reg)
-                args = [parse_arg(arg) for arg in raw_args]
-                match cmd:
-                    case "inp":
-                        assert len(args) == 0
-                        alu.inp(reg)
-                    case "add":
-                        assert len(args) == 1
-                        alu.add(reg, args[0])
-                    case "mul":
-                        assert len(args) == 1
-                        alu.mul(reg, args[0])
-                    case "div":
-                        assert len(args) == 1
-                        alu.div(reg, args[0])
-                    case "mod":
-                        assert len(args) == 1
-                        alu.mod(reg, args[0])
-                    case "eql":
-                        assert len(args) == 1
-                        alu.eql(reg, args[0])
-                    case _:
-                        raise ValueError(line)
-
+        program = Program.parse(self.input_path)
+        alu.run(program)
         alu.simplify()
         alu.solver.add(alu.regs[Register.Z] == 0)
         value = 0
