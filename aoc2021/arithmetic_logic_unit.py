@@ -108,8 +108,9 @@ class BackwardSolver(Interpreter):
         self.solver = z3.Solver()
         self.solver.push()
 
-    def solve(self, min_value: Optional[int] = None) -> Optional[int]:
+    def solve(self, min_value: Optional[int] = None, max_value: Optional[int] = None) -> Optional[int]:
         if min_value is not None:
+            assert max_value is None
             val = 0
             for i in self.inputs:
                 val *= 10
@@ -118,6 +119,16 @@ class BackwardSolver(Interpreter):
                 else:
                     val += i
             result = self.solver.check(val > min_value)
+        elif max_value is not None:
+            assert min_value is None
+            val = 0
+            for i in self.inputs:
+                val *= 10
+                if val == 0:
+                    val = i
+                else:
+                    val += i
+            result = self.solver.check(val < max_value)
         else:
             result = self.solver.check()
         if result == z3.sat:
@@ -142,6 +153,19 @@ class BackwardSolver(Interpreter):
             print(bigger)
             assert bigger > feasible
             feasible = bigger
+
+    def minimum_input(self) -> int:
+        feasible = self.solve()
+        if feasible is None:
+            raise ValueError("No solutions found!")
+        print(feasible)
+        while True:
+            smaller = self.solve(max_value=feasible)
+            if smaller is None or smaller == 11111111111111:
+                return feasible
+            print(smaller)
+            assert smaller < feasible
+            feasible = smaller
 
     def new_version(self, reg: Register) -> Symbolic:
         var = z3.Int(f"{reg.value}{self._var_counter}")
@@ -310,3 +334,10 @@ class ArithmeticLogicUnit(Challenge):
         program = Program.parse(self.input_path)
         alu.run(program)
         alu.maximum_input()
+
+    @Challenge.register_part(1)
+    def smallest_model_number(self):
+        alu = BackwardSolver()
+        program = Program.parse(self.input_path)
+        alu.run(program)
+        alu.minimum_input()
