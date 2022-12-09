@@ -8,7 +8,7 @@ setup(
     version="1.0",
     packages=find_packages(exclude=['test']),
     python_requires='>=3.9',
-    install_requires=["tqdm"],
+    install_requires=["tqdm", "z3-solver"],
     entry_points={
         'console_scripts': [
             'aoc2021 = aoc2021.__main__:main'
